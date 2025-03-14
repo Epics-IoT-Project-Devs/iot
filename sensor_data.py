@@ -1,4 +1,4 @@
-## Generates random data (only final versions, no calculations) and then passes it through the ML model to predict failure
+# Modifies sensor_data_4.py to make sure that the sensor data is properly generated
 
 import random
 import time
@@ -22,9 +22,27 @@ except Exception as e:
 def generate_sensor_data(data_queue):
     while True:
         tool_wear = random.randint(0, 300)
-        power = random.randint(8000, 12000)
-        temp_diff = random.randint(0, 20)
-        data = {"tool_wear": tool_wear, "power": power, "temp_diff": temp_diff, "timestamp": time.time()}
+        air_temp = random.randint(290, 310)  # Air temperature in Kelvin (20-30 Celsius)
+        process_temp = random.randint(air_temp, air_temp + 20)  # Process temperature, always >= air_temp
+        rotation_speed = random.randint(1000, 3000)  # Rotation speed in rpm
+        torque = random.randint(5, 75)  # Torque
+
+        temp_diff = process_temp - air_temp # Calculate temp_diff
+        # Calculate power from rotation speed and torque (example formula, adjust if needed)
+        # power = torque * rotation_speed / 9.5488 # Example power calculation (Torque * RPM / 9.5488 = Watts, assuming Torque in Nm and RPM)
+        power = 2 * 3.14159 * rotation_speed * torque / 60
+
+
+        data = {
+            "tool_wear": tool_wear,
+            "air_temp": air_temp,
+            "process_temp": process_temp,
+            "rotation_speed": rotation_speed,
+            "torque": torque,
+            "temp_diff": temp_diff,
+            "power": power, # Keep power calculation here
+            "timestamp": time.time()
+        }
         data_queue.put(data)
         time.sleep(0.1)
 
@@ -35,7 +53,7 @@ def process_sensor_data(data, model):
         'Type_L': [1],
         'Type_M': [0],
         'Tool wear': [data["tool_wear"]],
-        'Power': [data["power"]],
+        'Power': [data["power"]], #  USING POWER HERE because your model expects 'Power'
         'temp_diff': [data["temp_diff"]]
     })
 
@@ -56,21 +74,40 @@ def process_sensor_data(data, model):
         "Type_L": 1,
         "Type_M": 0,
         "Tool wear": data["tool_wear"],
-        "Power": data["power"],
-        "temp_diff": data["temp_diff"],
+        "rotation_speed": data["rotation_speed"], # Storing rotation speed
+        "torque": data["torque"], # Storing torque
+        "air_temp": data["air_temp"], # Storing air_temp
+        "process_temp": data["process_temp"], # Storing process_temp
+        "temp_diff": data["temp_diff"], # Storing temp_diff
+        "power": data["power"], # Storing power as well
         "prediction_label": prediction_label,
         "prediction_score": prediction_score,
         "timestamp": data["timestamp"]
     }
     return processed_data
 
-
 def store_data(processed_data, csv_file):
     writer = csv.writer(csv_file)
-    writer.writerow([processed_data["Type_H"], processed_data["Type_L"], processed_data["Type_M"],
-                     processed_data["Tool wear"], processed_data["Power"], processed_data["temp_diff"],
-                     processed_data["prediction_label"], processed_data["prediction_score"]])
-
+    # writer.writerow([processed_data["Type_H"], processed_data["Type_L"], processed_data["Type_M"],
+    #                  processed_data["Tool wear"], processed_data["power"], processed_data["temp_diff"], # Power is written to CSV
+    #                  processed_data["prediction_label"], processed_data["prediction_score"],
+    #                  processed_data["rotation_speed"], processed_data["torque"],
+    #                  processed_data["air_temp"], processed_data["process_temp"]
+    #                  ])
+    writer.writerow([
+        processed_data["Type_H"],
+        processed_data["Type_L"],
+        processed_data["Type_M"],
+        processed_data["Tool wear"],
+        processed_data["rotation_speed"],
+        processed_data["torque"],
+        processed_data["air_temp"],
+        processed_data["process_temp"],
+        processed_data["temp_diff"],
+        processed_data["power"],  # Power is written to CSV
+        processed_data["prediction_label"],
+        processed_data["prediction_score"]
+    ])
 
 def data_processing_thread(data_queue, csv_file, model):
     while True:
@@ -85,7 +122,8 @@ if __name__ == "__main__":
 
     csv_file = open("sensor_data.csv", "w", newline='')
     writer = csv.writer(csv_file)
-    writer.writerow(["Type_H", "Type_L", "Type_M", "Tool wear", "Power", "temp_diff", "prediction_label", "prediction_score"])  # Write header
+    writer.writerow(["Type_H", "Type_L", "Type_M", "Tool wear", "rotation_speed", "torque", "air_temp", "process_temp", "temp_diff", "Power", "prediction_label", "prediction_score"])  # Write header, more intuitive order
+    # writer.writerow(["Type_H", "Type_L", "Type_M", "Tool wear", "Power", "temp_diff", "prediction_label", "prediction_score", "rotation_speed", "torque", "air_temp", "process_temp"])
 
     sensor_thread = threading.Thread(target=generate_sensor_data, args=(data_queue,))
     processing_thread = threading.Thread(target=data_processing_thread, args=(data_queue, csv_file, model))  # Pass the model here
