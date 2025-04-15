@@ -1,4 +1,4 @@
-# Modifies sensor_data_4.py to make sure that the sensor data is properly generated
+# Takes input frmo the csv file which was fetched frmo the arduino
 
 import random
 import time
@@ -20,31 +20,58 @@ except Exception as e:
 
 
 def generate_sensor_data(data_queue):
-    while True:
-        tool_wear = random.randint(0, 300)
-        air_temp = random.randint(290, 310)  # Air temperature in Kelvin (20-30 Celsius)
-        process_temp = random.randint(air_temp, air_temp + 20)  # Process temperature, always >= air_temp
-        rotation_speed = random.randint(1000, 3000)  # Rotation speed in rpm
-        torque = random.randint(5, 75)  # Torque
+    try:
+        with open('sensor_input.csv', 'r', newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            if 'air_temp' not in (field.lower() for field in reader.fieldnames) or \
+               'process_temp' not in (field.lower() for field in reader.fieldnames):
+                raise ValueError("CSV file must contain columns 'air_temp' and 'process_temp'.")
 
-        temp_diff = process_temp - air_temp # Calculate temp_diff
-        # Calculate power from rotation speed and torque (example formula, adjust if needed)
-        # power = torque * rotation_speed / 9.5488 # Example power calculation (Torque * RPM / 9.5488 = Watts, assuming Torque in Nm and RPM)
-        power = 2 * 3.14159 * rotation_speed * torque / 60
+            temperature_data = list(reader)  # Read all temperature data into a list
 
+            while True:
+                if not temperature_data:
+                    print("End of CSV file reached. Looping from the beginning.")
+                    csvfile.seek(0)  # Go back to the beginning of the file
+                    next(reader)     # Skip the header row
+                    temperature_data = list(reader)
 
-        data = {
-            "tool_wear": tool_wear,
-            "air_temp": air_temp,
-            "process_temp": process_temp,
-            "rotation_speed": rotation_speed,
-            "torque": torque,
-            "temp_diff": temp_diff,
-            "power": power, # Keep power calculation here
-            "timestamp": time.time()
-        }
-        data_queue.put(data)
-        time.sleep(0.1)
+                temp_reading = random.choice(temperature_data) # Randomly select a row of temperature data
+
+                try:
+                    air_temp = float(temp_reading['air_temp'])
+                    process_temp = float(temp_reading['process_temp'])
+                except ValueError:
+                    print(f"Skipping invalid temperature data: {temp_reading}")
+                    continue
+
+                tool_wear = random.randint(0, 300)
+                rotation_speed = random.randint(1000, 3000)
+                torque = random.randint(5, 75)
+
+                temp_diff = process_temp - air_temp
+                power = 2 * 3.14159 * rotation_speed * torque / 60
+
+                data = {
+                    "tool_wear": tool_wear,
+                    "air_temp": air_temp,
+                    "process_temp": process_temp,
+                    "rotation_speed": rotation_speed,
+                    "torque": torque,
+                    "temp_diff": temp_diff,
+                    "power": power,
+                    "timestamp": time.time()
+                }
+                data_queue.put(data)
+                time.sleep(2)
+
+    except FileNotFoundError:
+        print(f"Error: CSV file not found at {'sensor_input.csv'}")
+    except ValueError as e:
+        print(f"Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
 
 
 def process_sensor_data(data, model):
